@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import "./App.css";
 
@@ -13,6 +14,11 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
+  const [githubRepos, setGithubRepos] = useState([]);
+  const [githubLoading, setGithubLoading] = useState(false);
+  const [importingRepoId, setImportingRepoId] = useState(null);
+  const [githubAccount, setGithubAccount] = useState("");
+
   // Load projects from the backend database.
   async function fetchProjects() {
     try {
@@ -23,7 +29,7 @@ function App() {
         throw new Error(data.message || "Could not load projects.");
       }
 
-      setProjects(data.projects);
+      setProjects(data.projects || []);
       setMessage("");
     } catch (error) {
       console.error("Fetch projects error:", error);
@@ -39,6 +45,134 @@ function App() {
     fetchProjects();
   }, []);
 
+  // Load GitHub repositories from the backend.
+  async function fetchGithubRepos() {
+    setGithubLoading(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/github/repos`);
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message || "Could not load GitHub repositories."
+        );
+      }
+
+      setGithubRepos(data.repositories || []);
+      setGithubAccount(data.account || "");
+    } catch (error) {
+      console.error("Fetch GitHub repositories error:", error);
+      setMessage(
+        error.message ||
+          "Could not load repositories. Connect GitHub and try again."
+      );
+    } finally {
+      setGithubLoading(false);
+    }
+  }
+
+  // Import actual source code from GitHub, then save the project.
+  async function importGithubRepo(repo) {
+    const name = repo.name;
+
+    const alreadyImported = projects.some(
+      (project) => project.name.toLowerCase() === name.toLowerCase()
+    );
+
+    if (alreadyImported) {
+      setMessage(`"${name}" is already in your Upnow projects.`);
+      return;
+    }
+
+    if (!repo.id) {
+      setMessage("This repository has no valid GitHub repository ID.");
+      return;
+    }
+
+    setImportingRepoId(repo.id);
+    setMessage("");
+
+    let sourceImported = false;
+
+    try {
+      // STEP 1: Download and extract the repository source code.
+      setMessage(`Downloading source code for "${name}" from GitHub...`);
+
+      const importResponse = await fetch(`${API_URL}/github/import`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          repoId: repo.id,
+        }),
+      });
+
+      const importData = await importResponse.json();
+
+      if (!importResponse.ok || !importData.success) {
+        throw new Error(
+          importData.message || "Could not download repository source code."
+        );
+      }
+
+      sourceImported = true;
+
+      // STEP 2: Save the project in the Upnow database.
+      const projectResponse = await fetch(`${API_URL}/projects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          framework: repo.language || "GitHub",
+        }),
+      });
+
+      const projectData = await projectResponse.json();
+
+      if (!projectResponse.ok || !projectData.success) {
+        if (projectResponse.status === 409) {
+          await fetchProjects();
+
+          throw new Error(
+            `Source code was downloaded, but a project named "${name}" already exists. Check your Projects page.`
+          );
+        }
+
+        throw new Error(
+          projectData.message ||
+            "Source code was downloaded, but the project could not be saved."
+        );
+      }
+
+      setProjects((previous) => [
+        projectData.project,
+        ...previous,
+      ]);
+
+      setMessage(
+        `"${name}" imported successfully! ${importData.fileCount} files downloaded. Source: ${importData.path}`
+      );
+    } catch (error) {
+      console.error("Import GitHub repository error:", error);
+
+      if (sourceImported) {
+        setMessage(
+          `Source code for "${name}" was downloaded, but saving the project failed. ${error.message}`
+        );
+      } else {
+        setMessage(error.message || "Could not import repository.");
+      }
+    } finally {
+      setImportingRepoId(null);
+    }
+  }
+
+  // Create a project manually.
   async function addProject(e) {
     e.preventDefault();
 
@@ -86,7 +220,6 @@ function App() {
         throw new Error(data.message || "Could not create project.");
       }
 
-      // Use the project returned by SQLite, including its database ID.
       setProjects((previous) => [data.project, ...previous]);
       setProjectName("");
       setShowForm(false);
@@ -100,6 +233,7 @@ function App() {
     }
   }
 
+  // Delete a project from the workspace.
   async function deleteProject(id) {
     const project = projects.find((item) => item.id === id);
 
@@ -150,6 +284,7 @@ function App() {
   const navigation = [
     { name: "Overview", icon: "▦" },
     { name: "Projects", icon: "◇" },
+    { name: "GitHub", icon: "⌘" },
     { name: "Deployments", icon: "↗" },
     { name: "Domains", icon: "◎" },
   ];
@@ -185,6 +320,10 @@ function App() {
               onClick={() => {
                 setActivePage(item.name);
                 setMessage("");
+
+                if (item.name === "GitHub") {
+                  fetchGithubRepos();
+                }
               }}
             >
               <span className="nav-icon">{item.icon}</span>
@@ -228,7 +367,10 @@ function App() {
             <div
               className="notice"
               role="status"
-              style={{ marginBottom: "20px" }}
+              style={{
+                marginBottom: "20px",
+                overflowWrap: "anywhere",
+              }}
             >
               <span>ⓘ</span>
               <span>{message}</span>
@@ -436,6 +578,136 @@ function App() {
             </>
           )}
 
+          {activePage === "GitHub" && (
+            <div className="github-page">
+              <div className="page-heading">
+                <div>
+                  <p className="eyebrow">SOURCE CONTROL</p>
+                  <h1>GitHub Repositories</h1>
+                  <p className="muted">
+                    Import repository source code into your Upnow workspace.
+                  </p>
+
+                  {githubAccount && (
+                    <p className="muted" style={{ marginTop: "8px" }}>
+                      Connected as <strong>{githubAccount}</strong>
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => {
+                    window.location.href = `${API_URL}/github`;
+                  }}
+                >
+                  Connect GitHub
+                </button>
+              </div>
+
+              <div
+                className="section-title-row"
+                style={{ marginTop: "24px" }}
+              >
+                <div>
+                  <h2>Your repositories</h2>
+                  <p className="muted">
+                    Import downloads and extracts the repository files onto
+                    your Upnow server. It does not deploy the website yet.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={fetchGithubRepos}
+                  disabled={githubLoading || importingRepoId !== null}
+                >
+                  {githubLoading ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
+
+              {githubLoading ? (
+                <div className="empty">
+                  <h3>Loading repositories...</h3>
+                  <p>Fetching repositories from GitHub.</p>
+                </div>
+              ) : githubRepos.length > 0 ? (
+                <div className="project-list">
+                  {githubRepos.map((repo) => {
+                    const imported = projects.some(
+                      (project) =>
+                        project.name.toLowerCase() ===
+                        repo.name.toLowerCase()
+                    );
+
+                    return (
+                      <article className="project-row" key={repo.id}>
+                        <div className="project-icon">⌘</div>
+
+                        <div className="project-info">
+                          <strong>{repo.name}</strong>
+                          <span>
+                            {repo.fullName}
+                            {" · "}
+                            {repo.language || "Language not detected"}
+                            {" · "}
+                            {repo.private ? "Private" : "Public"}
+                          </span>
+                        </div>
+
+                        <a
+                          href={repo.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="more-btn"
+                          aria-label={`Open ${repo.name} on GitHub`}
+                          title="Open on GitHub"
+                        >
+                          ↗
+                        </a>
+
+                        <button
+                          type="button"
+                          className="primary-btn"
+                          onClick={() => importGithubRepo(repo)}
+                          disabled={
+                            imported || importingRepoId !== null
+                          }
+                        >
+                          {importingRepoId === repo.id
+                            ? "Downloading..."
+                            : imported
+                              ? "Imported"
+                              : "Import Project"}
+                        </button>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="empty">
+                  <div className="empty-icon">⌘</div>
+                  <h3>No repositories loaded</h3>
+                  <p>
+                    Click Refresh to load repositories, or connect your GitHub
+                    account.
+                  </p>
+
+                  <button
+                    type="button"
+                    className="primary-btn"
+                    onClick={fetchGithubRepos}
+                    disabled={githubLoading}
+                  >
+                    Load Repositories
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {activePage === "Deployments" && (
             <div className="placeholder-page">
               <div className="placeholder-icon">↗</div>
@@ -444,15 +716,15 @@ function App() {
               <h1>Your deployments</h1>
 
               <p className="muted">
-                Your deployment history will appear here once the build
-                and hosting engine is connected.
+                Your deployment history will appear here once the build and
+                hosting engine is connected.
               </p>
 
               <div className="notice">
                 <span>ⓘ</span>
                 <span>
-                  This dashboard is currently a frontend prototype.
-                  It does not deploy real websites yet.
+                  Upnow does not deploy real websites yet. The next step is
+                  building the deployment engine.
                 </span>
               </div>
 
@@ -480,8 +752,8 @@ function App() {
               <div className="notice">
                 <span>ⓘ</span>
                 <span>
-                  Domain verification, DNS records, and SSL certificates
-                  will be implemented in a later step.
+                  Domain verification, DNS records, and SSL certificates will
+                  be implemented in a later step.
                 </span>
               </div>
 
@@ -497,7 +769,7 @@ function App() {
 
           <footer>
             Made for builders. Powered by <strong>Upnow.</strong>
-            <span className="footer-version">MVP · v0.3</span>
+            <span className="footer-version">MVP · v0.4</span>
           </footer>
         </section>
       </main>

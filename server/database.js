@@ -1,7 +1,8 @@
+
 const Database = require("better-sqlite3");
 const path = require("path");
 
-// Database file will be created inside the server folder
+// Database file
 const dbPath = path.join(__dirname, "upnow.db");
 const db = new Database(dbPath);
 
@@ -9,7 +10,7 @@ const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
-// Create projects table
+// Projects table — existing data is preserved
 db.exec(`
   CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,6 +21,19 @@ db.exec(`
   )
 `);
 
+// GitHub connections table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS github_connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    github_user_id INTEGER NOT NULL UNIQUE,
+    github_username TEXT NOT NULL,
+    access_token_encrypted TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
 console.log("✅ Upnow database connected successfully");
+console.log("✅ Projects and GitHub connections tables are ready");
 
 module.exports = db;

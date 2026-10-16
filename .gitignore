@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.env
+server/.env
+server/upnow.db
+
+# Imported repositories
+server/imported-repos/
+
+# SQLite temporary database files
+server/*.db-shm
+server/*.db-wal
