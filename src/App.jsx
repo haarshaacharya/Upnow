@@ -1,50 +1,45 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 
-const DEFAULT_PROJECTS = [
-  {
-    id: 1,
-    name: "my-portfolio",
-    status: "Ready",
-    framework: "React",
-  },
-  {
-    id: 2,
-    name: "my-first-app",
-    status: "Ready",
-    framework: "Vite",
-  },
-];
-
-function loadProjects() {
-  try {
-    const savedProjects = localStorage.getItem("upnow-projects");
-
-    return savedProjects !== null
-      ? JSON.parse(savedProjects)
-      : DEFAULT_PROJECTS;
-  } catch {
-    return DEFAULT_PROJECTS;
-  }
-}
+const API_URL = "http://localhost:5000/api";
 
 function App() {
-  const [projects, setProjects] = useState(loadProjects);
+  const [projects, setProjects] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [activePage, setActivePage] = useState("Overview");
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
-  // Save projects in this browser automatically.
-  useEffect(() => {
+  // Load projects from the backend database.
+  async function fetchProjects() {
     try {
-      localStorage.setItem("upnow-projects", JSON.stringify(projects));
-    } catch {
-      setMessage("Projects could not be saved in browser storage.");
-    }
-  }, [projects]);
+      const response = await fetch(`${API_URL}/projects`);
+      const data = await response.json();
 
-  function addProject(e) {
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Could not load projects.");
+      }
+
+      setProjects(data.projects);
+      setMessage("");
+    } catch (error) {
+      console.error("Fetch projects error:", error);
+      setMessage(
+        "Could not connect to the backend. Make sure your server is running on port 5000."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  async function addProject(e) {
     e.preventDefault();
 
     const name = projectName.trim();
@@ -70,36 +65,77 @@ function App() {
       return;
     }
 
-    const newProject = {
-      id: Date.now(),
-      name,
-      status: "Ready",
-      framework: "React",
-    };
-
-    setProjects((previous) => [...previous, newProject]);
-    setProjectName("");
-    setShowForm(false);
+    setSaving(true);
     setMessage("");
-    setActivePage("Projects");
+
+    try {
+      const response = await fetch(`${API_URL}/projects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          framework: "React",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Could not create project.");
+      }
+
+      // Use the project returned by SQLite, including its database ID.
+      setProjects((previous) => [data.project, ...previous]);
+      setProjectName("");
+      setShowForm(false);
+      setActivePage("Projects");
+      setMessage("Project created and saved successfully!");
+    } catch (error) {
+      console.error("Create project error:", error);
+      setMessage(error.message || "Could not create project.");
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function deleteProject(id) {
+  async function deleteProject(id) {
     const project = projects.find((item) => item.id === id);
 
     if (!project) return;
 
     const confirmed = window.confirm(
-      `Remove "${project.name}" from your Upnow dashboard?`
+      `Remove "${project.name}" from your Upnow workspace?`
     );
 
     if (!confirmed) return;
 
-    setProjects((previous) =>
-      previous.filter((item) => item.id !== id)
-    );
-
+    setDeletingId(id);
     setMessage("");
+
+    try {
+      const response = await fetch(`${API_URL}/projects/${id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Could not delete project.");
+      }
+
+      setProjects((previous) =>
+        previous.filter((item) => item.id !== id)
+      );
+
+      setMessage("Project deleted successfully.");
+    } catch (error) {
+      console.error("Delete project error:", error);
+      setMessage(error.message || "Could not delete project.");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   function openProject(project) {
@@ -180,7 +216,7 @@ function App() {
           <div className="topbar-actions">
             <span className="online-indicator">
               <i />
-              Dashboard active
+              {loading ? "Loading projects" : "Dashboard active"}
             </span>
 
             <div className="profile">H</div>
@@ -273,7 +309,7 @@ function App() {
                 <div>
                   <h2>Workspace overview</h2>
                   <p className="muted">
-                    Here&apos;s what&apos;s happening with your projects.
+                    Here's what's happening with your projects.
                   </p>
                 </div>
               </div>
@@ -286,9 +322,7 @@ function App() {
                   </div>
 
                   <h3>{projects.length}</h3>
-                  <p className="stat-note">
-                    Projects in your workspace
-                  </p>
+                  <p className="stat-note">Projects in your workspace</p>
                 </article>
 
                 <article className="stat-card">
@@ -310,14 +344,14 @@ function App() {
                   </div>
 
                   <h3 className="plan-value">Free</h3>
-                  <p className="stat-note">
-                    Your journey starts here
-                  </p>
+                  <p className="stat-note">Your journey starts here</p>
                 </article>
               </div>
 
               <ProjectsSection
                 projects={projects}
+                loading={loading}
+                deletingId={deletingId}
                 onDelete={deleteProject}
                 onOpen={openProject}
               />
@@ -365,15 +399,21 @@ function App() {
                       required
                       autoFocus
                       maxLength={60}
+                      disabled={saving}
                     />
 
-                    <button className="primary-btn" type="submit">
-                      Create Project
+                    <button
+                      className="primary-btn"
+                      type="submit"
+                      disabled={saving}
+                    >
+                      {saving ? "Creating..." : "Create Project"}
                     </button>
 
                     <button
                       className="secondary-btn"
                       type="button"
+                      disabled={saving}
                       onClick={() => {
                         setShowForm(false);
                         setProjectName("");
@@ -388,6 +428,8 @@ function App() {
 
               <ProjectsSection
                 projects={projects}
+                loading={loading}
+                deletingId={deletingId}
                 onDelete={deleteProject}
                 onOpen={openProject}
               />
@@ -439,7 +481,7 @@ function App() {
                 <span>ⓘ</span>
                 <span>
                   Domain verification, DNS records, and SSL certificates
-                  will be implemented when the backend is ready.
+                  will be implemented in a later step.
                 </span>
               </div>
 
@@ -455,7 +497,7 @@ function App() {
 
           <footer>
             Made for builders. Powered by <strong>Upnow.</strong>
-            <span className="footer-version">MVP · v0.2</span>
+            <span className="footer-version">MVP · v0.3</span>
           </footer>
         </section>
       </main>
@@ -463,7 +505,13 @@ function App() {
   );
 }
 
-function ProjectsSection({ projects, onDelete, onOpen }) {
+function ProjectsSection({
+  projects,
+  loading,
+  deletingId,
+  onDelete,
+  onOpen,
+}) {
   return (
     <section className="projects-section">
       <div className="section-heading">
@@ -479,42 +527,51 @@ function ProjectsSection({ projects, onDelete, onOpen }) {
       </div>
 
       <div className="project-list">
-        {projects.map((project) => (
-          <article className="project-row" key={project.id}>
-            <div className="project-icon">▲</div>
+        {loading && (
+          <div className="empty">
+            <h3>Loading projects...</h3>
+            <p>Fetching your projects from the Upnow database.</p>
+          </div>
+        )}
 
-            <div className="project-info">
-              <strong>{project.name}</strong>
-              <span>{project.framework} · Created in workspace</span>
-            </div>
+        {!loading &&
+          projects.map((project) => (
+            <article className="project-row" key={project.id}>
+              <div className="project-icon">▲</div>
 
-            <span className="status">
-              <i /> {project.status}
-            </span>
+              <div className="project-info">
+                <strong>{project.name}</strong>
+                <span>{project.framework} · Created in workspace</span>
+              </div>
 
-            <button
-              className="more-btn"
-              type="button"
-              onClick={() => onOpen(project)}
-              aria-label={`Open ${project.name}`}
-              title="Project details"
-            >
-              ↗
-            </button>
+              <span className="status">
+                <i /> {project.status}
+              </span>
 
-            <button
-              className="more-btn delete-btn"
-              type="button"
-              onClick={() => onDelete(project.id)}
-              aria-label={`Remove ${project.name}`}
-              title="Remove project"
-            >
-              ×
-            </button>
-          </article>
-        ))}
+              <button
+                className="more-btn"
+                type="button"
+                onClick={() => onOpen(project)}
+                aria-label={`Open ${project.name}`}
+                title="Project details"
+              >
+                ↗
+              </button>
 
-        {projects.length === 0 && (
+              <button
+                className="more-btn delete-btn"
+                type="button"
+                onClick={() => onDelete(project.id)}
+                disabled={deletingId === project.id}
+                aria-label={`Remove ${project.name}`}
+                title="Remove project"
+              >
+                {deletingId === project.id ? "…" : "×"}
+              </button>
+            </article>
+          ))}
+
+        {!loading && projects.length === 0 && (
           <div className="empty">
             <div className="empty-icon">◇</div>
             <h3>No projects yet</h3>
