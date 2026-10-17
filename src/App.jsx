@@ -561,7 +561,7 @@ function App() {
             ) : (
               <div className="empty-projects-card">
                 <div className="empty-icon-wrap">
-                  <VercelTriangle size={24} />
+                  <img src="/upnow.jpeg" alt="Upnow" className="empty-logo-img" />
                 </div>
                 <h3>No projects match your search</h3>
                 <p>Create a project or try clearing your search query.</p>
@@ -720,7 +720,7 @@ function App() {
       <footer className="vercel-footer">
         <div className="footer-content">
           <div className="footer-left">
-            <VercelTriangle size={14} />
+            <img src="/upnow.jpeg" alt="Upnow logo" className="footer-logo-img" />
             <span className="footer-brand">Upnow</span>
             <span>· Edge Cloud Platform v1.0</span>
           </div>

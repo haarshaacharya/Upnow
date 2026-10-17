@@ -60,19 +60,41 @@ body.light-theme .vercel-header {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #262626, #111111);
-  border: 1px solid var(--border-highlight);
-  color: #ffffff;
+  overflow: hidden;
+  background: transparent;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(0, 112, 243, 0.35);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-body.light-theme .brand-icon-box {
-  background: #000000;
-  color: #ffffff;
-  border: none;
+.vercel-brand:hover .brand-icon-box {
+  transform: scale(1.05);
+  box-shadow: 0 0 18px rgba(0, 112, 243, 0.55);
 }
 
-.brand-triangle {
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+.brand-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+
+.footer-logo-img {
+  width: 18px;
+  height: 18px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.empty-logo-img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
 }
 
 .brand-name {

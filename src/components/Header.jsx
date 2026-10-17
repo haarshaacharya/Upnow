@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
-  VercelTriangle,
   GitHubIcon,
   SearchIcon,
   SunIcon,
@@ -40,7 +39,7 @@ export function Header({
       <div className="vercel-header-left">
         <a href="#overview" className="vercel-brand" aria-label="Upnow Home">
           <div className="brand-icon-box">
-            <VercelTriangle size={20} className="brand-triangle" />
+            <img src="/upnow.jpeg" alt="Upnow logo" className="brand-logo-img" />
           </div>
           <span className="brand-name">UPNOW</span>
         </a>
